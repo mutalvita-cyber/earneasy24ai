@@ -1,6 +1,9 @@
-﻿# earneasy24ai
+# earneasy24ai
 
-Screen OCR automation bot with optional NVIDIA NIM model fallback.
+Fully automated screen OCR submitter. It watches a configured screen region,
+detects pixel changes, reads text with EasyOCR first, optionally falls back to
+the NVIDIA vision API, cleans the text, pastes it into the configured input box,
+and clicks submit.
 
 ## Install
 
@@ -10,23 +13,24 @@ python -m pip install -r requirements.txt
 
 ## Configure
 
-The bot reads local settings from `.env`. Keep `.env` private.
-
-Useful settings:
+Copy `.env.example` to `.env` and adjust the values.
 
 ```env
-OCR_ENGINE=hybrid
-NVIDIA_MODEL=mistralai/ministral-14b-instruct-2512
-AI_TIMEOUT_SECONDS=2.5
-AI_MAX_TOKENS=32
-LOOP_DELAY_SECONDS=0.25
+CAPTURE_REGION=700,193,478,205
+INPUT_BOX=100,325
+SUBMIT_BUTTON=200,400
+
+OCR_MODE=hybrid
+NVIDIA_API_KEY=
+
+DUPLICATE_TEXT_WINDOW_SECONDS=10.0
 ```
 
 OCR modes:
 
-- `fast`: local EasyOCR only. Usually the quickest.
-- `hybrid`: local EasyOCR first, NVIDIA only when local OCR sees nothing.
-- `ai`: NVIDIA model for every changed screenshot. Better reasoning, slower network round trip.
+- `hybrid`: EasyOCR first, NVIDIA fallback only when EasyOCR returns nothing.
+- `easyocr`: EasyOCR only.
+- `nvidia`: NVIDIA vision API for every processed screenshot.
 
 ## Run
 
@@ -36,5 +40,10 @@ python bot.py
 
 Hotkeys:
 
-- `F8`: start
-- `F9`: stop
+- `F6`: set input box to the current mouse position
+- `F7`: set submit button to the current mouse position
+- `F8`: start the bot
+- `F9`: stop the bot
+- `F12`: print the current mouse/config positions
+
+Once `F8` is pressed, the bot runs without manual text entry.
