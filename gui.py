@@ -18,8 +18,6 @@ from bot import Config, ScreenOcrBot, capture_screen, load_dotenv, read_config
 
 
 def make_dpi_aware() -> None:
-    import sys
-
     if sys.platform == "win32":
         try:
             import ctypes
@@ -151,7 +149,7 @@ class BotApp:
 
     def __init__(self, root: tk.Tk):
         self.root = root
-        self.root.title("Earneasy24 Screen OCR Bot Controller")
+        self.root.title("Earneasy24 Screen Bot Controller")
         self.root.geometry("1000x680")
         self.root.minsize(850, 550)
 
@@ -240,10 +238,6 @@ class BotApp:
         cal_menu.add_command(
             label="Calibrate Submit Button Position",
             command=lambda: self.start_click_calibration("Submit Button"),
-        )
-        cal_menu.add_command(
-            label="Calibrate Macro Play Button Position",
-            command=lambda: self.start_click_calibration("Play Button"),
         )
         cal_menu.add_command(
             label="Calibrate Status Banner Point",
@@ -359,9 +353,6 @@ class BotApp:
             "🎯\nSubmit",
             lambda: self.start_click_calibration("Submit"),
         )
-        self.btn_cal_play = self.create_toolbar_button(
-            toolbar, "🎯\nPlay Btn", lambda: self.start_click_calibration("Play")
-        )
         self.btn_cal_status = self.create_toolbar_button(
             toolbar, "🎯\nStatus", lambda: self.start_click_calibration("Status")
         )
@@ -407,6 +398,7 @@ class BotApp:
 
         self.tree.tag_configure("correct", foreground=self.accent_green)
         self.tree.tag_configure("wrong", foreground=self.accent_red)
+        self.tree.tag_configure("mismatch", foreground="#FFA500")
 
         # Bottom Status Bar
         self.status_bar = tk.Frame(main_panel, bg="#252526", height=28)
@@ -423,7 +415,7 @@ class BotApp:
 
         self.lbl_coords = tk.Label(
             self.status_bar,
-            text="CAPTURE: None | INPUT: None | SUBMIT: None | PLAY: None",
+            text="CAPTURE: None | INPUT: None | SUBMIT: None",
             font=("Segoe UI", 9),
             bg="#252526",
             fg="#aaaaaa",
@@ -508,25 +500,22 @@ class BotApp:
             cb.pack(anchor="w")
             self.inputs[env_key] = var
 
-        # Helper for OCR dropdown
+        # Helper for AI mode dropdown
         frame_ocr = tk.Frame(f, bg=self.sidebar_bg)
         frame_ocr.pack(fill=tk.X, padx=10, pady=5)
         tk.Label(
             frame_ocr,
-            text="OCR Mode",
+            text="AI Mode",
             font=("Segoe UI", 9),
             bg=self.sidebar_bg,
             fg="#bbbbbb",
             anchor="w",
         ).pack(fill=tk.X)
-        self.ocr_var = tk.StringVar(value=os.getenv("OCR_MODE", "accurate"))
+        self.ocr_var = tk.StringVar(value="nvidia")
         ocr_dropdown = ttk.OptionMenu(
             frame_ocr,
             self.ocr_var,
-            os.getenv("OCR_MODE", "accurate"),
-            "accurate",
-            "hybrid",
-            "easyocr",
+            "nvidia",
             "nvidia",
         )
         ocr_dropdown.pack(fill=tk.X, pady=(2, 0))
@@ -538,15 +527,12 @@ class BotApp:
             "NVIDIA_MODEL",
             "nvidia/llama-3.1-nemotron-nano-vl-8b-v1",
         )
-        add_entry("EasyOCR Languages (e.g. en,hi)", "EASYOCR_LANGUAGES", "en")
-        add_entry("EasyOCR Min Confidence", "EASYOCR_MIN_CONFIDENCE", "0.70")
         add_entry("Min CAPTCHA Length", "MIN_CAPTCHA_LENGTH", "6")
-        add_entry("Max CAPTCHA Length", "MAX_CAPTCHA_LENGTH", "12")
+        add_entry("Max CAPTCHA Length", "MAX_CAPTCHA_LENGTH", "20")
 
         # Delays & Timeouts
         add_entry("Loop Delay (sec)", "LOOP_DELAY_SECONDS", "0.15")
-        add_entry("Change Cooldown (sec)", "CHANGE_COOLDOWN_SECONDS", "10.0")
-        add_entry("Play Button Delay (sec)", "PLAY_DELAY_SECONDS", "1.0")
+        add_entry("Change Cooldown (sec)", "CHANGE_COOLDOWN_SECONDS", "3.0")
         add_entry("Paste Delay (sec)", "PASTE_DELAY_SECONDS", "0.05")
         add_entry("Submit Delay (sec)", "SUBMIT_DELAY_SECONDS", "0.05")
         add_entry("AI Connect Timeout (sec)", "AI_CONNECT_TIMEOUT_SECONDS", "3.0")
@@ -554,6 +540,7 @@ class BotApp:
 
         # Checkboxes
         add_checkbox("Clear Input Before Paste", "CLEAR_INPUT_BEFORE_PASTE", True)
+        add_checkbox("Double-Check (Confirm) CAPTCHAs", "DOUBLE_CHECK", True)
 
         # Save Button
         btn_save = tk.Button(
@@ -576,7 +563,6 @@ class BotApp:
     def setup_keyboard_hotkeys(self):
         keyboard.add_hotkey("F6", self.hotkey_calibrate_input)
         keyboard.add_hotkey("F7", self.hotkey_calibrate_submit)
-        keyboard.add_hotkey("F10", self.hotkey_calibrate_play)
         keyboard.add_hotkey("F11", self.hotkey_calibrate_status)
         keyboard.add_hotkey("F8", self.hotkey_start_bot)
         keyboard.add_hotkey("F9", self.hotkey_stop_bot)
@@ -596,14 +582,6 @@ class BotApp:
         self.add_log_row(
             "Calibrate Submit",
             f"Hotkey F7: Set to {self.bot.submit_button[0]},{self.bot.submit_button[1]}",
-        )
-
-    def hotkey_calibrate_play(self):
-        self.bot.calibrate_play_button()
-        self.update_coordinates_display()
-        self.add_log_row(
-            "Calibrate Play",
-            f"Hotkey F10: Set to {self.bot.play_button[0]},{self.bot.play_button[1]}",
         )
 
     def hotkey_calibrate_status(self):
@@ -628,8 +606,10 @@ class BotApp:
 
     # Execution controls
     def start_bot(self):
-        # Sync coordinates in config memory first
-        self.bot.config = read_config()
+        # Reload config and refresh all bot internals
+        new_config = read_config()
+        self.bot.config = new_config
+        self.bot.nvidia.config = new_config
 
         # Update status labels
         self.lbl_status.config(text="STATUS: RUNNING...", fg=self.accent_green)
@@ -676,8 +656,6 @@ class BotApp:
             "Input": "INPUT_BOX",
             "Submit Button": "SUBMIT_BUTTON",
             "Submit": "SUBMIT_BUTTON",
-            "Play Button": "PLAY_BUTTON",
-            "Play": "PLAY_BUTTON",
             "Status Point": "STATUS_POINT",
             "Status": "STATUS_POINT",
         }
@@ -690,8 +668,6 @@ class BotApp:
             self.bot.input_box = pos
         elif "Submit" in target:
             self.bot.submit_button = pos
-        elif "Play" in target:
-            self.bot.play_button = pos
         elif "Status" in target:
             self.bot.status_point = pos
 
@@ -775,14 +751,9 @@ class BotApp:
             return "Submitted CAPTCHA", val
         elif "Waiting" in msg and "seconds for new CAPTCHA" in msg:
             return "Loop Control", msg
-        elif "[EasyOCR] Detected text:" in msg:
-            return "EasyOCR Match", msg.split("[EasyOCR] Detected text:")[-1].strip()
-        elif "[EasyOCR] Ignored" in msg:
-            return "EasyOCR Ignore", msg.split("[EasyOCR] Ignored")[-1].strip()
-        elif "[OCR] Ignored text too short:" in msg:
-            return "OCR Ignore", msg.split("[OCR] Ignored text too short:")[-1].strip()
-        elif "[OCR] Ignored text too long:" in msg:
-            return "OCR Ignore", msg.split("[OCR] Ignored text too long:")[-1].strip()
+
+        elif "[AI] Skipped" in msg:
+            return "AI Skipped", msg.split("[AI] Skipped")[-1].strip().lstrip(":- ")
         elif "NVIDIA fallback failed" in msg or "NVIDIA fallback" in msg:
             return "NVIDIA vision AI", msg
         elif "Input box set to" in msg:
@@ -791,19 +762,27 @@ class BotApp:
             return "Calibrate Submit", msg.split("set to")[-1].strip()
         elif "Play button set to" in msg:
             return "Calibrate Play", msg.split("set to")[-1].strip()
-        elif "Bot started in" in msg:
+        elif "Bot started" in msg:
             return "Status Change", msg
         elif "Bot stopped" in msg:
             return "Status Change", "Stopped Bot"
         elif "Clicked Play button at" in msg:
             return "Playback Click", msg.split("at")[-1].strip()
         elif "No text detected" in msg:
-            return "OCR Fail", "No text detected in region"
+            return "AI Fail", "No text detected in region"
         elif "Submission Result:" in msg:
             val = msg.split("Submission Result:")[-1].strip()
             return "Submission Result", val
         elif "Status point set to" in msg:
             return "Calibrate Status", msg.split("set to")[-1].strip()
+        elif "[Confirm] Mismatch" in msg:
+            val = msg.split("[Confirm] Mismatch")[-1].strip().lstrip(" —-")
+            return "Confirm Mismatch", val
+        elif "[Confirm] Agreed" in msg:
+            val = msg.split("[Confirm] Agreed:")[-1].strip().strip("'")
+            return "Confirm OK", val
+        elif "[Confirm]" in msg:
+            return "Confirm", msg.split("[Confirm]")[-1].strip()
 
         return "Log", msg
 
@@ -819,6 +798,10 @@ class BotApp:
                         tag = "correct"
                     elif "Wrong" in value:
                         tag = "wrong"
+                elif action == "Confirm Mismatch":
+                    tag = "mismatch"
+                elif action == "Confirm OK":
+                    tag = "correct"
                 self.add_log_row(action, value, tag)
             except queue.Empty:
                 break
@@ -833,10 +816,9 @@ class BotApp:
         region_str = ",".join(str(x) for x in c.capture_region)
         input_str = f"{self.bot.input_box[0]},{self.bot.input_box[1]}"
         submit_str = f"{self.bot.submit_button[0]},{self.bot.submit_button[1]}"
-        play_str = f"{self.bot.play_button[0]},{self.bot.play_button[1]}"
         status_str = f"{self.bot.status_point[0]},{self.bot.status_point[1]}"
 
-        text = f"CAPTURE REGION: {region_str}  |  INPUT BOX: {input_str}  |  SUBMIT: {submit_str}  |  PLAY BTN: {play_str}  |  STATUS: {status_str}"
+        text = f"CAPTURE REGION: {region_str}  |  INPUT BOX: {input_str}  |  SUBMIT: {submit_str}  |  STATUS: {status_str}"
         self.lbl_coords.config(text=text)
 
     def on_closing(self):
